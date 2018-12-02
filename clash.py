@@ -26,7 +26,7 @@ PLAYER_FETCH_COUNT = 50
 
 # output column names for the basic clan info
 clanInfoColumnNames = ['Player Name', 'Player Tag', 'Last Played', 'Days Since Last Played',
-                       'Donations', 'Donations Received', 'Donations Percent']
+                       'Donations', 'Donations Received', 'Donations Percent', 'War Battles Missed %']
 clanWarInfoColumnNames = ['Player Name', 'War Date', 'War Final Battles Missed',
                           'War Final Battles Played', 'War Final Battle Wins', 'War Collection Day Battles Missed',
                           'War Collection Day Battles Played', 'War Cards Earned']
@@ -75,6 +75,7 @@ def writeGoogleSheetMemberStats(spreadsheet, theClan):
         cellList[index+4].value = player.donations
         cellList[index+5].value = player.donationsReceived
         cellList[index+6].value = player.donationsPercent
+        cellList[index+7].value = player.percentWarBattlesMissed
         index = index + numColumns
 
     worksheet.update_cells(cellList)
@@ -164,6 +165,7 @@ def writeOutputCsv(theClan):
                                        player.donations,
                                        player.donationsReceived,
                                        player.donationsPercent,
+                                       player.percentWarBattlesMissed
                                        ))
 
     headerRow = ','.join(clanWarInfoColumnNames)
@@ -239,6 +241,7 @@ def updateClanPlayersData(client, theClan, clanWarLogs):
     # for each player, get there battles which contains the game time
     # using the newest game time as the "last played" time
     numPlayersToGet = PLAYER_FETCH_COUNT
+
     for player in theClan.players:
         try:
             player.battles = fetchPlayerBattlesWithRetries(client, player.tag)
@@ -265,6 +268,7 @@ def updateClanPlayersData(client, theClan, clanWarLogs):
 
         player.warLogs = playerWarLogs
         player.sortByWarsMissed()
+        player.updatePercentWarBattlesMissed()
 
         for warLog in player.warLogs:
             print("\tWar:earned:{}, played:{}, finalDayWins:{}, collected:{}, collectDayMissed:{}, finalDayBattlesMissed:{}"

@@ -27,16 +27,20 @@ class WarLog:
 
 
 class Player:
-    def __init__(self, name, tag, donations, donationsReceived, donationsPercent, warLogs=None):
+    def __init__(self, name, tag, donations, donationsReceived, donationsPercent,
+                 lastPlayedTime=0, daysSinceLastPlayed=0, battles=[], warLogs=None):
         self.name = name
         self.tag = tag
         self.donations = donations
         self.donationsReceived = donationsReceived
         self.donationsPercent = donationsPercent
-        self.lastPlayedTime = 0
-        self.daysSinceLastPlayed = 0
-        self.battles = 0
+        self.lastPlayedTime = lastPlayedTime
+        self.daysSinceLastPlayed = daysSinceLastPlayed
+        self.battles = battles
         self.warLogs: List[WarLog] = warLogs
+        self.percentWarBattlesMissed = 0
+
+        self.updatePercentWarBattlesMissed()
 
     def __getstate__(self):
         return self
@@ -58,11 +62,26 @@ class Player:
                 self.donationsPercent}
 
     def sortByWarsMissed(self):
-        self.warLogs.sort(key=self.sortingKeyWarsMissed, reverse=True)
+        self.warLogs.sort(key=self.sortingKeyWarsMissed, reverse=False)
 
     @staticmethod
     def sortingKeyWarsMissed(warLog: WarLog):
         return warLog.numFinalDayBattlesMissed
+
+    def updatePercentWarBattlesMissed(self):
+        if self.warLogs is None:
+            return
+
+        missedCount = 0
+        totalWars = 0
+        for warLog in self.warLogs:
+            missedCount = missedCount + warLog.numFinalDayBattlesMissed
+            totalWars = totalWars + 1
+
+        if missedCount > 0:
+            self.percentWarBattlesMissed = missedCount / totalWars
+
+        return self.percentWarBattlesMissed * 100
 
 
 class Clan:
