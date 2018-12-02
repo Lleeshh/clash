@@ -4,10 +4,17 @@ import json
 import clashroyale
 import datetime
 import time
-from clan import Clan
-from clan import WarLog
+
 import sys
 import os
+import gspread
+
+from oauth2client.service_account import ServiceAccountCredentials
+from clan import Clan
+from clan import WarLog
+from pickler import saveAsPickled, loadPickled
+
+
 
 # File to store your royal api dev key or any other you may need
 tokensJsonFileName = 'tokens.json'
@@ -16,6 +23,43 @@ tokensJsonFileName = 'tokens.json'
 # For example, setting to 2 then only 2 players are retrieved, inspect the data, etc
 # for faster debugging
 PLAYER_FETCH_COUNT = 50
+
+
+# -----------------------------------------------------------------------------
+def getGoogleClient():
+    GOOGLE_API_SCOPE = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    credentials = ServiceAccountCredentials.from_json_keyfile_name('creds.json', GOOGLE_API_SCOPE)
+    gc = gspread.authorize(credentials)
+    return gc
+
+
+# -----------------------------------------------------------------------------
+def testSpreadSheet():
+    spreadSheetId = getGoogleSheetId(getTokens())
+    gc = getGoogleClient()
+
+    # Open a worksheet from spreadsheet with one shot
+    wks = gc.open("sheets-api-test").sheet1
+    wks.update_acell('B2', "it's down there somewhere, let me take another look.")
+    # Fetch a cell range
+    cell_list = wks.range('A1:B7')
+
+    spreadsheet = gc.open_by_key(spreadSheetId)
+    spreadsheet.sheet1.update_acell('E9', "this works too")
+
+
+# -----------------------------------------------------------------------------
+def writeToSheet(tokens, theClan):
+    spreadSheetId = getGoogleSheetId(tokens)
+    spreadsheet = getGoogleClient().open_by_key(spreadSheetId)
+    worksheet = spreadsheet.sheet1
+
+    columnNames = ['Player Name', 'Player Tag', 'Last Played', 'Days Since Last Played',
+                 'Donations', 'Donations Received', 'Donations Percent']
+
+    numColumns = columnNames.__len__();
+    for index in range(1, numColumns):
+        worksheet.update_cell(1, index, columnNames[index-1])
 
 
 # -----------------------------------------------------------------------------
@@ -49,6 +93,12 @@ def getRoyalDevKey(tokensJson):
 
 
 # -----------------------------------------------------------------------------
+def getGoogleSheetId(tokensJson):
+    if tokensJson is not None and tokensJson['google-sheet-id'] is not None:
+        return tokensJson['google-sheet-id']
+
+
+# -----------------------------------------------------------------------------
 def writeOutputCsv(theClan):
     rowFormat = "{},{},{},{},{},{},{}\n"
     headerRow = rowFormat.format('Player Name',
@@ -71,23 +121,25 @@ def writeOutputCsv(theClan):
                                        ))
 
     headerRow = rowFormat.format('Player Name',
-                                 'Player Tag',
                                  'War Date',
-                                 'War Cards Earned',
+                                 'War Final Battles Missed',
                                  'War Final Battles Played',
                                  'War Final Battle Wins',
-                                 'War Collection Day Battles Played')
+                                 'War Collection Day Battles Missed',
+                                 'War Collection Day Battles Played',
+                                 'War Cards Earned')
     with open('output/clanwarinfo.csv', 'w', encoding='UTF-8', newline='') as out:
         out.write(headerRow)
         for player in theClan.players:
             for warLog in player.warLogs:
                 out.write(rowFormat.format(player.name,
-                                           player.tag,
                                            warLog.warDate,
-                                           warLog.cardsEarned,
-                                           warLog.battlesPlayed,
-                                           warLog.wins,
-                                           warLog.collectionDayBattlesPlayed
+                                           warLog.numFinalDayBattlesMissed,
+                                           warLog.finalDayBattlesPlayed,
+                                           warLog.finalDayWins,
+                                           warLog.numCollectDayBattlesMissed,
+                                           warLog.collectionDayBattlesPlayed,
+                                           warLog.cardsEarned
                                            ))
 
 
@@ -133,11 +185,11 @@ def getPlayerWarInfo(clanWarLogs, playerName):
                     name = participant['name']
                     if name == playerName:
                         cardsEarned = participant['cardsEarned']
-                        battlesPlayed = participant['battlesPlayed']
+                        finalDayBattlesPlayed = participant['battlesPlayed']
                         wins = participant['wins']
                         collectionDayBattlesPlayed = participant['collectionDayBattlesPlayed']
                         warLog = WarLog(datetime.datetime.fromtimestamp(createdDate),
-                                        cardsEarned, battlesPlayed, wins, collectionDayBattlesPlayed)
+                                        cardsEarned, finalDayBattlesPlayed, wins, collectionDayBattlesPlayed)
                         warLogList.append(warLog)
 
     return warLogList
@@ -150,17 +202,15 @@ def updateClanPlayersData(client, theClan, clanWarLogs):
     numPlayersToGet = PLAYER_FETCH_COUNT
     for player in theClan.players:
         try:
-            battles = fetchPlayerBattlesWithRetries(client, player.tag)
+            player.battles = fetchPlayerBattlesWithRetries(client, player.tag)
         except:
             print("\tFailed to get player battles")
             continue
 
-        player.battles = battles
-
-        if battles.__len__() == 0:
+        if player.battles.__len__() == 0:
             player.daysSinceLastPlayed = 99999
         else:
-            for battle in battles:
+            for battle in player.battles:
                 lastPlayedPosixTime = battle['utcTime']
                 if lastPlayedPosixTime > player.lastPlayedTime:
                     player.lastPlayedTime = lastPlayedPosixTime  # update the players last played time
@@ -176,9 +226,10 @@ def updateClanPlayersData(client, theClan, clanWarLogs):
 
         player.warLogs = playerWarLogs
         for warLog in player.warLogs:
-            print("\tWar:earned:{}, played:{}, wins:{}, collected:{}"
-                  .format(warLog.cardsEarned, warLog.battlesPlayed, warLog.wins,
-                          warLog.collectionDayBattlesPlayed))
+            print("\tWar:earned:{}, played:{}, finalDayWins:{}, collected:{}, collectDayMissed:{}, finalDayBattlesMissed:{}"
+                  .format(warLog.cardsEarned, warLog.finalDayBattlesPlayed, warLog.finalDayWins,
+                          warLog.collectionDayBattlesPlayed, warLog.numCollectDayBattlesMissed,
+                          warLog.numFinalDayBattlesMissed))
 
         numPlayersToGet = numPlayersToGet - 1
         if numPlayersToGet == 0:
@@ -191,42 +242,52 @@ def main(clanTag):
     print("CLASH Running...")
     print()
 
-    tokens = getTokens()
-    if tokens is None:
-        exit(1)
+    pickledFilename = 'output/pickled-clan.csv'
 
-    royalDevKey = getRoyalDevKey(tokens)
-    if royalDevKey is None:
-        exit(1)
+    # if we have saved test data, use it
+    if loadPickled(pickledFilename) is None:
+        tokens = getTokens()
+        if tokens is None:
+            exit(1)
 
-    try:
-        client = clashroyale.RoyaleAPI(royalDevKey)
-    except:
-        print("\tFailure: Unable to get the royal client")
-        exit(2)
+        royalDevKey = getRoyalDevKey(tokens)
+        if royalDevKey is None:
+            exit(1)
 
-    # Get the clans war info
-    try:
-        clanWarLogs = client.get_clan_war_log(clanTag)
-    except:
-        print("\tRetrying on {}".format("get_clan_war_log"))
-        clanWarLogs = client.get_clan_war_log(clanTag)
+        try:
+            client = clashroyale.RoyaleAPI(royalDevKey)
+        except:
+            print("\tFailure: Unable to get the royal client")
+            exit(2)
 
-    # Get the clan info
-    try:
-        clanInfoJson = client.get_clan(clanTag)
-    except:
-        print("\tRetrying on {}".format("get_clan"))
-        clanInfoJson = client.get_clan(clanTag)
+        # Get the clans war info
+        try:
+            clanWarLogs = client.get_clan_war_log(clanTag)
+        except:
+            print("\tRetrying on {}".format("get_clan_war_log"))
+            clanWarLogs = client.get_clan_war_log(clanTag)
 
-    # theClan = Clan(clanInfoJson.raw_data['name'], clanInfoJson.raw_data['tag'])
-    eleventyNine = Clan.clanFromClanJson(clanInfoJson)
+        # Get the clan info
+        try:
+            clanInfoJson = client.get_clan(clanTag)
+        except:
+            print("\tRetrying on {}".format("get_clan"))
+            clanInfoJson = client.get_clan(clanTag)
 
-    # Get the members of the clan and their info
-    updateClanPlayersData(client, eleventyNine, clanWarLogs)
+        # theClan = Clan(clanInfoJson.raw_data['name'], clanInfoJson.raw_data['tag'])
+        eleventyNine = Clan.clanFromClanJson(clanInfoJson)
+
+        # Get the members of the clan and their info
+        updateClanPlayersData(client, eleventyNine, clanWarLogs)
+
+        # save test data for faster testing
+        saveAsPickled(pickledFilename, eleventyNine)
 
     # write the output to a csv
     writeOutputCsv(eleventyNine)
+
+    # put the data in our google sheet
+    writeToSheet(tokens, eleventyNine)
 
     print()
     print("------------------------------------------------------------------------")
@@ -241,6 +302,11 @@ if __name__ == '__main__':
                         dest="clantag",
                         required=True,
                         help="Clan Tag Value")
+    parser.add_argument("-td", "--testdata",
+                        dest="useTestData",
+                        required=False,
+                        default=False,
+                        help="Use pickled test data if available")
     args = parser.parse_args()
 
     main(args.clantag)

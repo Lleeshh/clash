@@ -2,12 +2,18 @@ from typing import List
 
 
 class WarLog:
-    def __init__(self, warDate, cardsEarned, battlesPlayed, wins, collectionDayBattlesPlayed):
+    def __init__(self, warDate, cardsEarned, finalDayBattlesPlayed, finalDayWins, collectionDayBattlesPlayed):
+        MAX_NUM_FINAL_WAR_BATTLES = 1
+        MAX_NUM_COLLECTION_DAY_BATTLES = 3
+
         self.warDate = warDate
         self.cardsEarned = cardsEarned
-        self.battlesPlayed = battlesPlayed
-        self.wins = wins
+        self.finalDayBattlesPlayed = finalDayBattlesPlayed
+        self.finalDayWins = finalDayWins
         self.collectionDayBattlesPlayed = collectionDayBattlesPlayed
+
+        self.numCollectDayBattlesMissed = MAX_NUM_COLLECTION_DAY_BATTLES - collectionDayBattlesPlayed
+        self.numFinalDayBattlesMissed = MAX_NUM_FINAL_WAR_BATTLES - finalDayBattlesPlayed
 
 
 class Player:
