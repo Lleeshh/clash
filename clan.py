@@ -57,6 +57,13 @@ class Player:
                 self.donationsReceived,
                 self.donationsPercent}
 
+    def sortByWarsMissed(self):
+        self.warLogs.sort(key=self.sortingKeyWarsMissed, reverse=True)
+
+    @staticmethod
+    def sortingKeyWarsMissed(warLog: WarLog):
+        return warLog.numFinalDayBattlesMissed
+
 
 class Clan:
     def __init__(self, name, tag):
@@ -73,6 +80,13 @@ class Clan:
     def __getattr__(self, attr):
         print(attr.upper())
         return attr.upper()
+
+    def sortPlayersByLastPlayed(self):
+        self.players.sort(key=self.sortingKeyLastPlayed)
+
+    @staticmethod
+    def sortingKeyLastPlayed(player: Player):
+        return player.daysSinceLastPlayed
 
     @staticmethod
     def clanFromClanJson(clanInfoJson):

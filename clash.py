@@ -31,6 +31,7 @@ clanWarInfoColumnNames = ['Player Name', 'War Date', 'War Final Battles Missed',
                           'War Final Battles Played', 'War Final Battle Wins', 'War Collection Day Battles Missed',
                           'War Collection Day Battles Played', 'War Cards Earned']
 
+
 # -----------------------------------------------------------------------------
 def getGoogleClient():
     GOOGLE_API_SCOPE = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -40,22 +41,31 @@ def getGoogleClient():
 
 
 # -----------------------------------------------------------------------------
-def writeToSheet(tokens, theClan):
+def writeGoogleSheet(tokens, data):
+    if tokens is None:
+        raise Exception("Tokens list not provided")
+
     spreadSheetId = getGoogleSheetId(tokens)
     spreadsheet = getGoogleClient().open_by_key(spreadSheetId)
 
-    worksheetName = datetime.date.today().__str__()
+    writeGoogleSheetMemberStats(spreadsheet, data)
+    writeGoogleSheetMemberWarStats(spreadsheet, data)
+
+
+# -----------------------------------------------------------------------------
+def writeGoogleSheetMemberStats(spreadsheet, theClan):
+    worksheetName = "memberstats-" + datetime.date.today().__str__()
     try:
         worksheet = spreadsheet.worksheet(worksheetName)
     except WorksheetNotFound:
         worksheet = spreadsheet.add_worksheet(title=worksheetName, rows="100", cols="20")
 
-    # write header
-    rangeMax = clanInfoColumnNames.__len__() + 1;
+    numColumns = clanInfoColumnNames.__len__()
+    rangeMax = numColumns + 1;
     for colIndex in range(1, rangeMax):
         worksheet.update_cell(1, colIndex, clanInfoColumnNames[colIndex-1])
 
-    cellList = worksheet.range(2, 1, PLAYER_FETCH_COUNT+10, clanInfoColumnNames.__len__())
+    cellList = worksheet.range(2, 1, PLAYER_FETCH_COUNT+10, numColumns)
     index = 0
     for player in theClan.players:
         cellList[index].value = player.name
@@ -65,9 +75,40 @@ def writeToSheet(tokens, theClan):
         cellList[index+4].value = player.donations
         cellList[index+5].value = player.donationsReceived
         cellList[index+6].value = player.donationsPercent
-        index = index + clanInfoColumnNames.__len__()
+        index = index + numColumns
 
     worksheet.update_cells(cellList)
+
+
+# -----------------------------------------------------------------------------
+def writeGoogleSheetMemberWarStats(spreadsheet, theClan):
+    worksheetName = "warstats"
+    try:
+        worksheet = spreadsheet.worksheet(worksheetName)
+    except WorksheetNotFound:
+        worksheet = spreadsheet.add_worksheet(title=worksheetName, rows="100", cols="20")
+
+    numColumns = clanWarInfoColumnNames.__len__()
+    rangeMax = numColumns + 1;
+    for colIndex in range(1, rangeMax):
+        worksheet.update_cell(1, colIndex, clanWarInfoColumnNames[colIndex-1])
+
+    cellList = worksheet.range(2, 1, PLAYER_FETCH_COUNT*10, numColumns)
+    index = 0
+    for player in theClan.players:
+        for warLog in player.warLogs:
+            cellList[index].value = player.name
+            cellList[index+1].value = warLog.warDate
+            cellList[index+2].value = warLog.numFinalDayBattlesMissed
+            cellList[index+3].value = warLog.finalDayBattlesPlayed
+            cellList[index+4].value = warLog.finalDayWins
+            cellList[index+5].value = warLog.numCollectDayBattlesMissed
+            cellList[index+6].value = warLog.collectionDayBattlesPlayed
+            cellList[index+7].value = warLog.cardsEarned
+            index = index + numColumns
+
+    worksheet.update_cells(cellList)
+
 
 # -----------------------------------------------------------------------------
 # Hack to get the paths to work on windows to find any input or output files
@@ -97,12 +138,16 @@ def getTokens():
 def getRoyalDevKey(tokensJson):
     if tokensJson is not None and tokensJson['royale-dev-key'] is not None:
         return tokensJson['royale-dev-key']
+    else:
+        return None
 
 
 # -----------------------------------------------------------------------------
 def getGoogleSheetId(tokensJson):
     if tokensJson is not None and tokensJson['google-sheet-id'] is not None:
         return tokensJson['google-sheet-id']
+    else:
+        return None
 
 
 # -----------------------------------------------------------------------------
@@ -173,6 +218,7 @@ def getPlayerWarInfo(clanWarLogs, playerName):
     for clanWarLog in clanWarLogs:
         if clanWarLog['createdDate'] is not None:
             createdDate = clanWarLog['createdDate']
+            createdDate = datetime.datetime.fromtimestamp(createdDate).__str__()
 
             if clanWarLog['participants'] is not None:
                 for participant in clanWarLog['participants']:
@@ -182,8 +228,7 @@ def getPlayerWarInfo(clanWarLogs, playerName):
                         finalDayBattlesPlayed = participant['battlesPlayed']
                         wins = participant['wins']
                         collectionDayBattlesPlayed = participant['collectionDayBattlesPlayed']
-                        warLog = WarLog(datetime.datetime.fromtimestamp(createdDate),
-                                        cardsEarned, finalDayBattlesPlayed, wins, collectionDayBattlesPlayed)
+                        warLog = WarLog(createdDate, cardsEarned, finalDayBattlesPlayed, wins, collectionDayBattlesPlayed)
                         warLogList.append(warLog)
 
     return warLogList
@@ -219,6 +264,8 @@ def updateClanPlayersData(client, theClan, clanWarLogs):
             continue
 
         player.warLogs = playerWarLogs
+        player.sortByWarsMissed()
+
         for warLog in player.warLogs:
             print("\tWar:earned:{}, played:{}, finalDayWins:{}, collected:{}, collectDayMissed:{}, finalDayBattlesMissed:{}"
                   .format(warLog.cardsEarned, warLog.finalDayBattlesPlayed, warLog.finalDayWins,
@@ -228,6 +275,8 @@ def updateClanPlayersData(client, theClan, clanWarLogs):
         numPlayersToGet = numPlayersToGet - 1
         if numPlayersToGet == 0:
             break
+
+    theClan.sortPlayersByLastPlayed()
 
 
 # -----------------------------------------------------------------------------
@@ -249,7 +298,7 @@ def main(clanTag, useTestData):
 
     if clan is not None:
         writeOutputCsv(clan)
-        writeToSheet(tokens, clan)
+        writeGoogleSheetMemberStats(tokens, clan)
         exit(0)
 
     # at this point, we need gather all the data from the servers
@@ -290,7 +339,7 @@ def main(clanTag, useTestData):
     writeOutputCsv(clan)
 
     # put the data in our google sheet
-    writeToSheet(tokens, clan)
+    writeGoogleSheet(tokens, clan)
 
     print()
     print("------------------------------------------------------------------------")
