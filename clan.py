@@ -15,6 +15,16 @@ class WarLog:
         self.numCollectDayBattlesMissed = MAX_NUM_COLLECTION_DAY_BATTLES - collectionDayBattlesPlayed
         self.numFinalDayBattlesMissed = MAX_NUM_FINAL_WAR_BATTLES - finalDayBattlesPlayed
 
+    def __getstate__(self):
+        return self
+
+    def __setstate__(self, d):
+        return
+
+    def __getattr__(self, attr):
+        print(attr.upper())
+        return attr.upper()
+
 
 class Player:
     def __init__(self, name, tag, donations, donationsReceived, donationsPercent, warLogs=None):
@@ -27,6 +37,16 @@ class Player:
         self.daysSinceLastPlayed = 0
         self.battles = 0
         self.warLogs: List[WarLog] = warLogs
+
+    def __getstate__(self):
+        return self
+
+    def __setstate__(self, d):
+        return
+
+    def __getattr__(self, attr):
+        print(attr.upper())
+        return attr.upper()
 
     def getAsList(self):
         return {self.name,
@@ -43,6 +63,16 @@ class Clan:
         self.name = name
         self.tag = tag
         self.players: List[Player] = []
+
+    def __getstate__(self):
+        return self
+
+    def __setstate__(self, d):
+        return
+
+    def __getattr__(self, attr):
+        print(attr.upper())
+        return attr.upper()
 
     @staticmethod
     def clanFromClanJson(clanInfoJson):

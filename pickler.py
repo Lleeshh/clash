@@ -4,15 +4,15 @@ import os
 
 # -----------------------------------------------------------------------------
 def saveAsPickled(filename, data):
-    with open(filename, mode='wb') as f:
-        pickle.dump(data, f)
+    with open(filename, mode='wb') as file:
+        pickle.dump(data, file)
 
 
 # -----------------------------------------------------------------------------
 def loadPickled(filename):
     if os.path.isfile(filename):
-        with open(filename, 'rb') as pickleFile:
-            return pickle.load(pickleFile)
+        with open(filename, mode='rb') as file:
+            return pickle.load(file)
     else:
         return None
 
