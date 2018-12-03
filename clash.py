@@ -1,26 +1,23 @@
 import argparse
-import json
-
-import clashroyale
 import datetime
 import time
 
-import sys
-import os
-import gspread
-from gspread import WorksheetNotFound
+import clashroyale
 
-from oauth2client.service_account import ServiceAccountCredentials
 from clan import Clan
 from clan import WarLog
 from pickler import saveAsPickled, loadPickled
-
-
 # File to store your royal api dev key or any other you may need
+from sheets import writeGoogleSheets
+from tokens import Tokens
+from utils import str2bool, addSubDirsToPath, getDaysFromNow
+
 tokensJsonFileName = 'tokens.json'
+pickledFilename = 'output/pickled-clan.bin'
 
 # Mostly for debugging.  If >Clan size, then all players are obtained.
-# For example, setting to 2 then only 2 players are retrieved, inspect the data, etc
+# For example, 
+# setting to 2 then only 2 players are retrieved, inspect the data, etc
 # for faster debugging
 PLAYER_FETCH_COUNT = 50
 
@@ -30,125 +27,6 @@ clanInfoColumnNames = ['Player Name', 'Player Tag', 'Last Played', 'Days Since L
 clanWarInfoColumnNames = ['Player Name', 'War Date', 'War Final Battles Missed',
                           'War Final Battles Played', 'War Final Battle Wins', 'War Collection Day Battles Missed',
                           'War Collection Day Battles Played', 'War Cards Earned']
-
-
-# -----------------------------------------------------------------------------
-def getGoogleClient():
-    GOOGLE_API_SCOPE = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    credentials = ServiceAccountCredentials.from_json_keyfile_name('creds.json', GOOGLE_API_SCOPE)
-    gc = gspread.authorize(credentials)
-    return gc
-
-
-# -----------------------------------------------------------------------------
-def writeGoogleSheet(tokens, data):
-    if tokens is None:
-        raise Exception("Tokens list not provided")
-
-    spreadSheetId = getGoogleSheetId(tokens)
-    spreadsheet = getGoogleClient().open_by_key(spreadSheetId)
-
-    writeGoogleSheetMemberStats(spreadsheet, data)
-    writeGoogleSheetMemberWarStats(spreadsheet, data)
-
-
-# -----------------------------------------------------------------------------
-def writeGoogleSheetMemberStats(spreadsheet, theClan):
-    worksheetName = "memberstats-" + datetime.date.today().__str__()
-    try:
-        worksheet = spreadsheet.worksheet(worksheetName)
-    except WorksheetNotFound:
-        worksheet = spreadsheet.add_worksheet(title=worksheetName, rows="100", cols="20")
-
-    numColumns = clanInfoColumnNames.__len__()
-    rangeMax = numColumns + 1;
-    for colIndex in range(1, rangeMax):
-        worksheet.update_cell(1, colIndex, clanInfoColumnNames[colIndex-1])
-
-    cellList = worksheet.range(2, 1, PLAYER_FETCH_COUNT+10, numColumns)
-    index = 0
-    for player in theClan.players:
-        cellList[index].value = player.name
-        cellList[index+1].value = player.tag
-        cellList[index+2].value = player.lastPlayedTime
-        cellList[index+3].value = player.daysSinceLastPlayed
-        cellList[index+4].value = player.donations
-        cellList[index+5].value = player.donationsReceived
-        cellList[index+6].value = player.donationsPercent
-        cellList[index+7].value = player.percentWarBattlesMissed
-        index = index + numColumns
-
-    worksheet.update_cells(cellList)
-
-
-# -----------------------------------------------------------------------------
-def writeGoogleSheetMemberWarStats(spreadsheet, theClan):
-    worksheetName = "warstats"
-    try:
-        worksheet = spreadsheet.worksheet(worksheetName)
-    except WorksheetNotFound:
-        worksheet = spreadsheet.add_worksheet(title=worksheetName, rows="100", cols="20")
-
-    numColumns = clanWarInfoColumnNames.__len__()
-    rangeMax = numColumns + 1;
-    for colIndex in range(1, rangeMax):
-        worksheet.update_cell(1, colIndex, clanWarInfoColumnNames[colIndex-1])
-
-    cellList = worksheet.range(2, 1, PLAYER_FETCH_COUNT*10, numColumns)
-    index = 0
-    for player in theClan.players:
-        for warLog in player.warLogs:
-            cellList[index].value = player.name
-            cellList[index+1].value = warLog.warDate
-            cellList[index+2].value = warLog.numFinalDayBattlesMissed
-            cellList[index+3].value = warLog.finalDayBattlesPlayed
-            cellList[index+4].value = warLog.finalDayWins
-            cellList[index+5].value = warLog.numCollectDayBattlesMissed
-            cellList[index+6].value = warLog.collectionDayBattlesPlayed
-            cellList[index+7].value = warLog.cardsEarned
-            index = index + numColumns
-
-    worksheet.update_cells(cellList)
-
-
-# -----------------------------------------------------------------------------
-# Hack to get the paths to work on windows to find any input or output files
-def addSubDirsToPath():
-    excludeList = ['.git', '.idea', 'venv', '__pycache__', 'output']
-    a_dir = os.path.dirname(sys.modules['__main__'].__file__)
-    for name in os.listdir(a_dir):
-        if os.path.isdir(name):
-            pathToAdd = a_dir + "\\" + name
-            if name not in excludeList:
-                sys.path.append(pathToAdd)
-
-
-# -----------------------------------------------------------------------------
-def getTokens():
-    try:
-        with open(tokensJsonFileName) as f:
-            data = json.load(f)
-    except:
-        print("Failure:{} must exist and must contain json with key={}:<royal dev key>".format(tokensJsonFileName, "royale-dev-key"))
-        return None
-
-    return data
-
-
-# -----------------------------------------------------------------------------
-def getRoyalDevKey(tokensJson):
-    if tokensJson is not None and tokensJson['royale-dev-key'] is not None:
-        return tokensJson['royale-dev-key']
-    else:
-        return None
-
-
-# -----------------------------------------------------------------------------
-def getGoogleSheetId(tokensJson):
-    if tokensJson is not None and tokensJson['google-sheet-id'] is not None:
-        return tokensJson['google-sheet-id']
-    else:
-        return None
 
 
 # -----------------------------------------------------------------------------
@@ -185,19 +63,6 @@ def writeOutputCsv(theClan):
 
 
 # -----------------------------------------------------------------------------
-def getDaysFromNow(timeStamp):
-    if timeStamp > 0:
-        lastPlayedDateTime = datetime.datetime.fromtimestamp(timeStamp)
-        todayDateTime = datetime.datetime.fromtimestamp(time.time())
-        diff = todayDateTime - lastPlayedDateTime
-        daysSincePlayed = diff.days
-    else:
-        daysSincePlayed = "99999"
-
-    return daysSincePlayed
-
-
-# -----------------------------------------------------------------------------
 def fetchPlayerBattlesWithRetries(client, playerTag, retries=10, sleepInSec=2):
     for count in range(retries):
         try:
@@ -230,7 +95,8 @@ def getPlayerWarInfo(clanWarLogs, playerName):
                         finalDayBattlesPlayed = participant['battlesPlayed']
                         wins = participant['wins']
                         collectionDayBattlesPlayed = participant['collectionDayBattlesPlayed']
-                        warLog = WarLog(createdDate, cardsEarned, finalDayBattlesPlayed, wins, collectionDayBattlesPlayed)
+                        warLog = WarLog(createdDate, cardsEarned, finalDayBattlesPlayed, wins,
+                                        collectionDayBattlesPlayed)
                         warLogList.append(warLog)
 
     return warLogList
@@ -258,6 +124,8 @@ def updateClanPlayersData(client, theClan, clanWarLogs):
                     player.lastPlayedTime = lastPlayedPosixTime  # update the players last played time
 
             player.daysSinceLastPlayed = getDaysFromNow(player.lastPlayedTime)
+            if player.daysSinceLastPlayed is None:
+                player.daysSinceLastPlayed = 99999
 
         print("{}:{}".format(player.name, player.daysSinceLastPlayed))
 
@@ -271,10 +139,11 @@ def updateClanPlayersData(client, theClan, clanWarLogs):
         player.updatePercentWarBattlesMissed()
 
         for warLog in player.warLogs:
-            print("\tWar:earned:{}, played:{}, finalDayWins:{}, collected:{}, collectDayMissed:{}, finalDayBattlesMissed:{}"
-                  .format(warLog.cardsEarned, warLog.finalDayBattlesPlayed, warLog.finalDayWins,
-                          warLog.collectionDayBattlesPlayed, warLog.numCollectDayBattlesMissed,
-                          warLog.numFinalDayBattlesMissed))
+            print(
+                "\tWar:earned:{}, played:{}, finalDayWins:{}, collected:{}, collectDayMissed:{}, finalDayBattlesMissed:{}"
+                    .format(warLog.cardsEarned, warLog.finalDayBattlesPlayed, warLog.finalDayWins,
+                            warLog.collectionDayBattlesPlayed, warLog.numCollectDayBattlesMissed,
+                            warLog.numFinalDayBattlesMissed))
 
         numPlayersToGet = numPlayersToGet - 1
         if numPlayersToGet == 0:
@@ -290,11 +159,7 @@ def main(clanTag, useTestData):
     print()
 
     clan = None
-    tokens = getTokens()
-    if tokens is None:
-        exit(1)
-
-    pickledFilename = 'output/pickled-clan.bin'
+    tokens = Tokens(tokensJsonFileName)
 
     # if we have saved test data, use it
     if useTestData is True:
@@ -302,11 +167,11 @@ def main(clanTag, useTestData):
 
     if clan is not None:
         writeOutputCsv(clan)
-        writeGoogleSheetMemberStats(tokens, clan)
+        writeGoogleSheets(tokens, clan, clanInfoColumnNames, clanWarInfoColumnNames)
         exit(0)
 
     # at this point, we need gather all the data from the servers
-    royalDevKey = getRoyalDevKey(tokens)
+    royalDevKey = tokens.getRoyalDevKey()
     if royalDevKey is None:
         exit(1)
 
@@ -343,23 +208,13 @@ def main(clanTag, useTestData):
     writeOutputCsv(clan)
 
     # put the data in our google sheet
-    writeGoogleSheet(tokens, clan)
+    writeGoogleSheets(tokens, clan, clanInfoColumnNames, clanWarInfoColumnNames)
 
     print()
     print("------------------------------------------------------------------------")
     print("CLASH Ending...")
 
     exit(0)
-
-
-# -----------------------------------------------------------------------------
-def str2bool(v):
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
 if __name__ == '__main__':

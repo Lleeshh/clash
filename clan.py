@@ -101,7 +101,7 @@ class Clan:
         return attr.upper()
 
     def sortPlayersByLastPlayed(self):
-        self.players.sort(key=self.sortingKeyLastPlayed)
+        self.players.sort(key=self.sortingKeyLastPlayed, reverse=True)
 
     @staticmethod
     def sortingKeyLastPlayed(player: Player):
