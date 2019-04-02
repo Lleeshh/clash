@@ -10,6 +10,9 @@ import time
 def addSubDirsToPath():
     excludeList = ['.git', '.idea', 'venv', '__pycache__', 'output']
     a_dir = os.path.dirname(sys.modules['__main__'].__file__)
+    if a_dir is None:
+        return
+
     for name in os.listdir(a_dir):
         if os.path.isdir(name):
             pathToAdd = a_dir + "\\" + name
@@ -36,3 +39,9 @@ def getDaysFromNow(timeStamp):
         return diff.days
 
     return None
+
+
+# -----------------------------------------------------------------------------
+def openBrowserTab(url):
+    import webbrowser
+    webbrowser.open(url, new=2)

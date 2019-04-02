@@ -10,7 +10,7 @@ from pickler import saveAsPickled, loadPickled
 # File to store your royal api dev key or any other you may need
 from sheets import writeGoogleSheets
 from tokens import Tokens
-from utils import str2bool, addSubDirsToPath, getDaysFromNow
+from utils import str2bool, addSubDirsToPath, getDaysFromNow, openBrowserTab
 
 tokensJsonFileName = 'tokens.json'
 pickledFilename = 'output/pickled-clan.bin'
@@ -152,8 +152,7 @@ def updateClanPlayersData(client, theClan, clanWarLogs):
     theClan.sortPlayersByLastPlayed()
 
 
-# -----------------------------------------------------------------------------
-def main(clanTag, useTestData):
+def main(clanTag, useTestData, browse):
     print("------------------------------------------------------------------------")
     print("CLASH Running...")
     print()
@@ -212,19 +211,25 @@ def main(clanTag, useTestData):
 
     print()
     print("------------------------------------------------------------------------")
-    print("CLASH Ending...")
+    print("CLASH Finished...")
+
+    if browse:
+        openBrowserTab("https://docs.google.com/spreadsheets/d/{}".format(tokens.getGoogleSheetId()))
 
     exit(0)
 
 
 if __name__ == '__main__':
-    addSubDirsToPath()
-
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--clantag",
                         dest="clantag",
                         required=True,
                         help="Clan Tag Value")
+    parser.add_argument("-b", "--browse",
+                        dest="browse",
+                        required=False,
+                        default=True,
+                        help="Open browser tab with resulting spreadsheet")
     parser.add_argument("-td", "--testdata",
                         type=str2bool,
                         nargs='?',
@@ -234,4 +239,4 @@ if __name__ == '__main__':
                         help="Use pickled test data if available")
     args = parser.parse_args()
 
-    main(args.clantag, args.useTestData)
+    main(args.clantag, args.useTestData, args.browse)
