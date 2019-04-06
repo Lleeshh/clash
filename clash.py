@@ -174,6 +174,12 @@ def main(clanTag, useTestData, browse):
     if royalDevKey is None:
         exit(1)
 
+    clanTagToken = tokens.getClanTag();
+    if clanTag is None and clanTagToken is None:
+        exit(2)
+    elif clanTagToken is not None:
+        clanTag = clanTagToken
+
     try:
         client = clashroyale.RoyaleAPI(royalDevKey)
     except:
@@ -223,7 +229,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--clantag",
                         dest="clantag",
-                        required=True,
+                        required=False,
                         help="Clan Tag Value")
     parser.add_argument("-b", "--browse",
                         dest="browse",

@@ -29,7 +29,16 @@ class Tokens:
         if self.tokensJson is None:
             return None
 
-        if self. tokensJson['google-sheet-id'] is None:
+        if self.tokensJson['google-sheet-id'] is None:
             return None
 
         return self.tokensJson['google-sheet-id']
+
+    def getClanTag(self):
+        if self.tokensJson is None:
+            return None
+
+        if self.tokensJson['clantag'] is None:
+            return None
+
+        return self.tokensJson['clantag']
